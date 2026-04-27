@@ -1,134 +1,97 @@
 import logging
-import asyncio
 import requests
 from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from PIL import Image, ImageDraw
 
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
-CHANNEL_ID = "@AndriaGold"
+TOKEN = "PUT_YOUR_TOKEN"
 
 logging.basicConfig(level=logging.INFO)
 
-last_prices = None
+# نخزن آخر سعر لكل مستخدم
+last_data = {}
 
 
-# ========== GET PRICES ==========
-def get_prices():
+# ===== جلب الأسعار =====
+def get_gold_table():
     try:
         url = "https://edahabapp.com/"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
+        headers = {"User-Agent": "Mozilla/5.0"}
 
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+
+        soup = BeautifulSoup(r.text, "html.parser")
         items = soup.find_all("div", class_="price-item")
 
-        data = {}
+        text = "📊 أسعار الذهب اليوم\n\n"
+        text += "العيار | السعر\n"
+        text += "-----------------\n"
 
         for item in items:
-            text = item.get_text(" ", strip=True)
-            parts = text.split()
+            t = item.get_text(" ", strip=True)
+            parts = t.split()
 
             if len(parts) >= 2:
-                name = parts[0]
-                price = parts[1].replace(",", "")
+                text += f"{parts[0]} | {' '.join(parts[1:])}\n"
 
-                if price.isdigit():
-                    data[name] = int(price)
+        return text
 
-        return data
-
-    except:
-        return {}
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 
-# ========== IMAGE ==========
-def create_image(new_data, old_data=None):
-    img = Image.new("RGB", (800, 450), (18, 18, 28))
-    draw = ImageDraw.Draw(img)
+# ===== إرسال تحديث لو فيه تغيير =====
+async def check_updates(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
 
-    draw.text((250, 10), "📊 GOLD MARKET LIVE", fill=(255, 215, 0))
+    new_data = get_gold_table()
 
-    y = 80
+    global last_data
 
-    for k, v in new_data.items():
+    # لو اتغير → ابعت
+    if last_data.get(chat_id) != new_data:
+        last_data[chat_id] = new_data
 
-        old = old_data.get(k) if old_data else None
-
-        if old:
-            diff = v - old
-            arrow = "↑" if diff > 0 else "↓" if diff < 0 else "➖"
-        else:
-            arrow = "NEW"
-
-        draw.text((50, y), k, fill=(255, 255, 255))
-        draw.text((300, y), str(v), fill=(255, 255, 255))
-        draw.text((600, y), arrow, fill=(0, 255, 0))
-
-        y += 35
-
-    path = "gold.png"
-    img.save(path)
-    return path
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="📢 تحديث جديد:\n\n" + new_data[:4000]
+        )
 
 
-# ========== MONITOR ==========
-async def monitor(app):
-    global last_prices
-
-    while True:
-        new_data = get_prices()
-
-        if not new_data:
-            await asyncio.sleep(10)
-            continue
-
-        # 🔥 أول تشغيل: إرسال أول سعر فورًا
-        if last_prices is None:
-            img = create_image(new_data)
-
-            await app.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=open(img, "rb"),
-                caption="📊 أول تحديث لأسعار الذهب"
-            )
-
-            last_prices = new_data
-            await asyncio.sleep(10)
-            continue
-
-        # 🔥 بعد كده: تحديث عند التغيير فقط
-        if new_data != last_prices:
-            img = create_image(new_data, last_prices)
-
-            await app.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=open(img, "rb"),
-                caption="📢 تحديث أسعار الذهب"
-            )
-
-            last_prices = new_data
-
-        await asyncio.sleep(10)
-
-
-# ========== START ==========
+# ===== /start =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ البوت شغال وبيحدث القناة تلقائيًا")
+    chat_id = update.effective_chat.id
+
+    # أول رسالة فوراً
+    data = get_gold_table()
+    last_data[chat_id] = data
+
+    await update.message.reply_text(
+        "✅ أهلاً 👋\nدي أسعار الذهب الحالية:\n\n" + data[:4000]
+    )
+
+    # شيل أي job قديم لنفس المستخدم
+    for job in context.job_queue.get_jobs_by_name(str(chat_id)):
+        job.schedule_removal()
+
+    # شغل متابعة التغيير فقط
+    context.job_queue.run_repeating(
+        check_updates,
+        interval=60,
+        first=60,  # يبدأ يراقب بعد دقيقة
+        chat_id=chat_id,
+        name=str(chat_id)
+    )
 
 
-# ========== POST INIT ==========
-async def post_init(app):
-    app.create_task(monitor(app))
-
-
-# ========== MAIN ==========
+# ===== تشغيل البوت =====
 def main():
-    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
 
-    print("🚀 Bot Running...")
+    print("Bot running...")
     app.run_polling()
 
 
