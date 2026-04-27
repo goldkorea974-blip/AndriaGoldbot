@@ -4,33 +4,39 @@ from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
-CHANNEL_ID = -1001234567890  # غيّره
+TOKEN = "PUT_YOUR_TOKEN_HERE"
+
+# 🔴 حط ID القناة الحقيقي (مهم جدًا)
+CHANNEL_ID = -1001234567890
 
 logging.basicConfig(level=logging.INFO)
 
+# تخزين آخر بيانات
 last_data = {"global": None}
 
 
+# ===== جلب الأسعار =====
 def get_gold_table():
     try:
         url = "https://edahabapp.com/"
         headers = {"User-Agent": "Mozilla/5.0"}
 
         r = requests.get(url, headers=headers, timeout=10)
-        print("STATUS:", r.status_code)  # debug
+        r.raise_for_status()
 
         soup = BeautifulSoup(r.text, "html.parser")
         items = soup.find_all("div", class_="price-item")
 
-        if not items:
-            print("⚠️ No items found - HTML changed")
-
         text = "📊 أسعار الذهب اليوم\n\n"
+        text += "العيار | السعر\n"
+        text += "-----------------\n"
 
         for item in items:
             t = item.get_text(" ", strip=True)
-            text += t + "\n"
+            parts = t.split()
+
+            if len(parts) >= 2:
+                text += f"{parts[0]} | {' '.join(parts[1:])}\n"
 
         return text
 
@@ -39,6 +45,7 @@ def get_gold_table():
         return f"❌ Error: {e}"
 
 
+# ===== التحديث التلقائي =====
 async def check_updates(context: ContextTypes.DEFAULT_TYPE):
     print("Checking updates...")
 
@@ -49,33 +56,49 @@ async def check_updates(context: ContextTypes.DEFAULT_TYPE):
     if last_data["global"] != new_data:
         last_data["global"] = new_data
 
-        print("Sending to channel...")
+        msg = "📢 تحديث أسعار الذهب:\n\n" + new_data[:4000]
 
         await context.bot.send_message(
             chat_id=CHANNEL_ID,
-            text="📢 تحديث:\n\n" + new_data[:4000]
+            text=msg
         )
 
+        print("Sent to channel")
 
+
+# ===== /start =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_gold_table()
     last_data["global"] = data
 
     await update.message.reply_text(
-        "✅ شغال\n\n" + data[:4000]
+        "✅ أسعار الذهب الحالية:\n\n" + data[:4000]
     )
 
 
+# ===== اختبار القناة =====
+async def test_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(
+        chat_id=CHANNEL_ID,
+        text="✅ البوت نجح في الإرسال للقناة"
+    )
+
+
+# ===== تشغيل البوت =====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("test", test_channel))
 
-    # مهم: تشغيل job بشكل صريح
-    job_queue = app.job_queue
-    job_queue.run_repeating(check_updates, interval=60, first=10)
+    # تشغيل التحديث كل دقيقة
+    app.job_queue.run_repeating(
+        check_updates,
+        interval=60,
+        first=1
+    )
 
-    print("BOT RUNNING...")
+    print("Bot is running...")
     app.run_polling()
 
 
