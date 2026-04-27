@@ -6,13 +6,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 
-# قناة النشر
-CHANNEL_ID = "@AndriaGold"
+# مهم جدًا: استخدم ID القناة الحقيقي
+CHANNEL_ID = -1001234567890  # غيّره لرقم قناتك
 
 logging.basicConfig(level=logging.INFO)
 
-# نخزن آخر بيانات لكل شات
-last_data = {}
+# نخزن آخر سعر (عام لكل البوت)
+last_data = {"global": None}
 
 
 # ===== جلب أسعار الذهب =====
@@ -44,26 +44,16 @@ def get_gold_table():
         return f"❌ Error: {e}"
 
 
-# ===== التحديثات التلقائية =====
+# ===== التحديث التلقائي =====
 async def check_updates(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-
     new_data = get_gold_table()
     global last_data
 
-    # لو حصل تغيير
-    if last_data.get(chat_id) != new_data:
-        last_data[chat_id] = new_data
+    if last_data["global"] != new_data:
+        last_data["global"] = new_data
 
         msg = "📢 تحديث أسعار الذهب:\n\n" + new_data[:4000]
 
-        # إرسال للمستخدم
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=msg
-        )
-
-        # إرسال للقناة
         await context.bot.send_message(
             chat_id=CHANNEL_ID,
             text=msg
@@ -72,26 +62,12 @@ async def check_updates(context: ContextTypes.DEFAULT_TYPE):
 
 # ===== /start =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
     data = get_gold_table()
-    last_data[chat_id] = data
+
+    last_data["global"] = data
 
     await update.message.reply_text(
-        "✅ أهلاً 👋\nدي أسعار الذهب الحالية:\n\n" + data[:4000]
-    )
-
-    # حذف أي تحديث قديم
-    for job in context.job_queue.get_jobs_by_name(str(chat_id)):
-        job.schedule_removal()
-
-    # تشغيل متابعة التحديث
-    context.job_queue.run_repeating(
-        check_updates,
-        interval=60,   # كل دقيقة
-        first=60,
-        chat_id=chat_id,
-        name=str(chat_id)
+        "✅ أسعار الذهب الحالية:\n\n" + data[:4000]
     )
 
 
@@ -100,6 +76,13 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+
+    # تشغيل التحديث كل دقيقة
+    app.job_queue.run_repeating(
+        check_updates,
+        interval=60,
+        first=10
+    )
 
     print("Bot is running...")
     app.run_polling()
