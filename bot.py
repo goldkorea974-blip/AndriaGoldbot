@@ -8,6 +8,9 @@ TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 
 logging.basicConfig(level=logging.INFO)
 
+# نخزن آخر بيانات لكل مستخدم
+last_data = {}
+
 
 # ===== جلب الأسعار =====
 def get_gold_table():
@@ -16,8 +19,9 @@ def get_gold_table():
         headers = {"User-Agent": "Mozilla/5.0"}
 
         r = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
+        r.raise_for_status()
 
+        soup = BeautifulSoup(r.text, "html.parser")
         items = soup.find_all("div", class_="price-item")
 
         text = "📊 أسعار الذهب اليوم\n\n"
@@ -37,13 +41,37 @@ def get_gold_table():
         return f"❌ Error: {e}"
 
 
-# ===== أمر /start =====
+# ===== إرسال الأسعار =====
+async def send_prices(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.chat_id
+
+    new_data = get_gold_table()
+
+    global last_data
+
+    # إرسال فقط لو تغيرت البيانات
+    if last_data.get(chat_id) != new_data:
+        last_data[chat_id] = new_data
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=new_data[:4000]
+        )
+
+
+# ===== /start =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id  # 👈 أهم سطر
+    chat_id = update.effective_chat.id
 
     await update.message.reply_text(
-        "✅ أهلاً 👋\nالبوت شغال وهيبعت لك أسعار الذهب كل دقيقة"
+        "✅ أهلاً 👋\nالبوت شغال وهيبعت لك أسعار الذهب عند التغيير"
     )
+
+    # منع تكرار الـ job لنفس المستخدم
+    current_jobs = context.job_queue.get_jobs_by_name(str(chat_id))
+    for job in current_jobs:
+        job.schedule_removal()
 
     # تشغيل job خاص بكل مستخدم
     context.job_queue.run_repeating(
@@ -55,26 +83,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ===== إرسال الأسعار =====
-async def send_prices(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    chat_id = job.chat_id
-
-    data = get_gold_table()
-
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=data[:4000]
-    )
-
-
 # ===== تشغيل البوت =====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
 
-    print("Bot running...")
+    print("Bot is running...")
     app.run_polling()
 
 
