@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from PIL import Image, ImageDraw
 
-TOKEN = "PUT_YOUR_TOKEN"
+TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 CHANNEL_ID = "@AndriaGold"
 
 logging.basicConfig(level=logging.INFO)
