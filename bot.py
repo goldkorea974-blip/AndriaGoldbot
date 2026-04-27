@@ -6,12 +6,12 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from PIL import Image, ImageDraw
 
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
+TOKEN = "PUT_YOUR_TOKEN"
 CHANNEL_ID = "@AndriaGold"
 
 logging.basicConfig(level=logging.INFO)
 
-last_prices = {}
+last_prices = None
 
 
 # ========== GET PRICES ==========
@@ -47,7 +47,7 @@ def create_image(new_data, old_data=None):
     img = Image.new("RGB", (800, 450), (18, 18, 28))
     draw = ImageDraw.Draw(img)
 
-    draw.text((260, 10), "📊 GOLD MARKET", fill=(255, 215, 0))
+    draw.text((250, 10), "📊 GOLD MARKET LIVE", fill=(255, 215, 0))
 
     y = 80
 
@@ -57,23 +57,13 @@ def create_image(new_data, old_data=None):
 
         if old:
             diff = v - old
-
-            if diff > 0:
-                color = (0, 255, 0)
-                arrow = "↑"
-            elif diff < 0:
-                color = (255, 60, 60)
-                arrow = "↓"
-            else:
-                color = (200, 200, 200)
-                arrow = "➖"
+            arrow = "↑" if diff > 0 else "↓" if diff < 0 else "➖"
         else:
-            color = (200, 200, 200)
             arrow = "NEW"
 
-        draw.text((50, y), f"{k}", fill=(255, 255, 255))
+        draw.text((50, y), k, fill=(255, 255, 255))
         draw.text((300, y), str(v), fill=(255, 255, 255))
-        draw.text((600, y), arrow, fill=color)
+        draw.text((600, y), arrow, fill=(0, 255, 0))
 
         y += 35
 
@@ -82,14 +72,33 @@ def create_image(new_data, old_data=None):
     return path
 
 
-# ========== LOOP ==========
+# ========== MONITOR ==========
 async def monitor(app):
     global last_prices
 
     while True:
         new_data = get_prices()
 
-        if new_data and new_data != last_prices:
+        if not new_data:
+            await asyncio.sleep(10)
+            continue
+
+        # 🔥 أول تشغيل: إرسال أول سعر فورًا
+        if last_prices is None:
+            img = create_image(new_data)
+
+            await app.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=open(img, "rb"),
+                caption="📊 أول تحديث لأسعار الذهب"
+            )
+
+            last_prices = new_data
+            await asyncio.sleep(10)
+            continue
+
+        # 🔥 بعد كده: تحديث عند التغيير فقط
+        if new_data != last_prices:
             img = create_image(new_data, last_prices)
 
             await app.bot.send_photo(
