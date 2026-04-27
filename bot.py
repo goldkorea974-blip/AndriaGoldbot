@@ -13,15 +13,13 @@ def get_prices():
     headers = {"User-Agent": "Mozilla/5.0"}
 
     response = requests.get(url, headers=headers)
-    response.encoding = 'utf-8'
     soup = BeautifulSoup(response.text, "html.parser")
 
     items = soup.find_all("div", class_="price-item")
     result = ""
 
     for item in items:
-        text = item.get_text(strip=True)
-        result += text + "\n"
+        result += item.get_text(strip=True) + "\n"
 
     return result
 
@@ -39,16 +37,13 @@ async def check_prices(context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ هبعتلك الأسعار أول ما تتغير")
+    await update.message.reply_text("✅ البوت شغال وهيبعت التحديثات تلقائيًا")
 
-    context.job_queue.run_repeating(
-        check_prices,
-        interval=60,
-        first=0,
-        chat_id=CHAT_ID
-    )
+# تشغيل الـ job مرة واحدة
+async def post_init(app):
+    app.job_queue.run_repeating(check_prices, interval=60, first=5)
 
-app = ApplicationBuilder().token(TOKEN).build()
+app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
 app.add_handler(CommandHandler("start", start))
 
