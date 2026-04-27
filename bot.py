@@ -8,7 +8,7 @@ TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 
 logging.basicConfig(level=logging.INFO)
 
-# نخزن آخر بيانات لكل مستخدم
+# نخزن آخر سعر لكل مستخدم
 last_data = {}
 
 
@@ -41,22 +41,21 @@ def get_gold_table():
         return f"❌ Error: {e}"
 
 
-# ===== إرسال الأسعار =====
-async def send_prices(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    chat_id = job.chat_id
+# ===== إرسال تحديث لو فيه تغيير =====
+async def check_updates(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
 
     new_data = get_gold_table()
 
     global last_data
 
-    # إرسال فقط لو تغيرت البيانات
+    # لو اتغير → ابعت
     if last_data.get(chat_id) != new_data:
         last_data[chat_id] = new_data
 
         await context.bot.send_message(
             chat_id=chat_id,
-            text=new_data[:4000]
+            text="📢 تحديث جديد:\n\n" + new_data[:4000]
         )
 
 
@@ -64,20 +63,23 @@ async def send_prices(context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
+    # أول رسالة فوراً
+    data = get_gold_table()
+    last_data[chat_id] = data
+
     await update.message.reply_text(
-        "✅ أهلاً 👋\nالبوت شغال وهيبعت لك أسعار الذهب عند التغيير"
+        "✅ أهلاً 👋\nدي أسعار الذهب الحالية:\n\n" + data[:4000]
     )
 
-    # منع تكرار الـ job لنفس المستخدم
-    current_jobs = context.job_queue.get_jobs_by_name(str(chat_id))
-    for job in current_jobs:
+    # شيل أي job قديم لنفس المستخدم
+    for job in context.job_queue.get_jobs_by_name(str(chat_id)):
         job.schedule_removal()
 
-    # تشغيل job خاص بكل مستخدم
+    # شغل متابعة التغيير فقط
     context.job_queue.run_repeating(
-        send_prices,
+        check_updates,
         interval=60,
-        first=3,
+        first=60,  # يبدأ يراقب بعد دقيقة
         chat_id=chat_id,
         name=str(chat_id)
     )
@@ -89,7 +91,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
 
-    print("Bot is running...")
+    print("Bot running...")
     app.run_polling()
 
 
