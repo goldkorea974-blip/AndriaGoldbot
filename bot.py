@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import requests
 from bs4 import BeautifulSoup
 from telegram import Update
@@ -13,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 last_prices = {}
 
 
-# ================= GET PRICES =================
+# ========== GET PRICES ==========
 def get_prices():
     try:
         url = "https://edahabapp.com/"
@@ -37,109 +38,86 @@ def get_prices():
 
         return data
 
-    except Exception as e:
-        logging.error(e)
+    except:
         return {}
 
 
-# ================= IMAGE (PRO TRADING STYLE) =================
+# ========== IMAGE ==========
 def create_image(new_data, old_data=None):
-    width, height = 800, 500
-    img = Image.new("RGB", (width, height), (15, 18, 28))
+    img = Image.new("RGB", (800, 450), (18, 18, 28))
     draw = ImageDraw.Draw(img)
 
-    # Title
-    draw.text((260, 15), "📊 GOLD MARKET LIVE", fill=(255, 215, 0))
+    draw.text((260, 10), "📊 GOLD MARKET", fill=(255, 215, 0))
 
-    # Grid
-    for y in range(60, height, 40):
-        draw.line([(0, y), (width, y)], fill=(40, 40, 60))
+    y = 80
 
-    # Header box
-    draw.rectangle([(20, 50), (780, 90)], outline=(255, 215, 0))
+    for k, v in new_data.items():
 
-    draw.text((40, 60), "ASSET", fill="white")
-    draw.text((320, 60), "PRICE", fill="white")
-    draw.text((580, 60), "CHANGE", fill="white")
-
-    y = 110
-
-    for key, value in new_data.items():
-
-        old = old_data.get(key) if old_data else None
+        old = old_data.get(k) if old_data else None
 
         if old:
-            diff = value - old
-            percent = (diff / old) * 100 if old != 0 else 0
+            diff = v - old
 
             if diff > 0:
                 color = (0, 255, 0)
-                arrow = f"↑ +{percent:.2f}%"
+                arrow = "↑"
             elif diff < 0:
                 color = (255, 60, 60)
-                arrow = f"↓ {percent:.2f}%"
+                arrow = "↓"
             else:
                 color = (200, 200, 200)
-                arrow = "➖ 0%"
-
+                arrow = "➖"
         else:
             color = (200, 200, 200)
             arrow = "NEW"
 
-        draw.text((40, y), key, fill=(255, 255, 255))
-        draw.text((320, y), str(value), fill=(255, 255, 255))
-        draw.text((580, y), arrow, fill=color)
+        draw.text((50, y), f"{k}", fill=(255, 255, 255))
+        draw.text((300, y), str(v), fill=(255, 255, 255))
+        draw.text((600, y), arrow, fill=color)
 
-        y += 40
+        y += 35
 
-        if y > 460:
-            break
-
-    path = "gold_market.png"
+    path = "gold.png"
     img.save(path)
     return path
 
 
-# ================= CHECK UPDATE =================
-async def check_prices(context: ContextTypes.DEFAULT_TYPE):
+# ========== LOOP ==========
+async def monitor(app):
     global last_prices
 
-    new_data = get_prices()
+    while True:
+        new_data = get_prices()
 
-    if not new_data:
-        return
+        if new_data and new_data != last_prices:
+            img = create_image(new_data, last_prices)
 
-    # أول مرة
-    if not last_prices:
-        last_prices = new_data
-        return
+            await app.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=open(img, "rb"),
+                caption="📢 تحديث أسعار الذهب"
+            )
 
-    # تغيير حصل
-    if new_data != last_prices:
-        img_path = create_image(new_data, last_prices)
+            last_prices = new_data
 
-        await context.bot.send_photo(
-            chat_id=CHANNEL_ID,
-            photo=open(img_path, "rb"),
-            caption="📢 تحديث جديد في أسعار الذهب"
-        )
-
-        last_prices = new_data
+        await asyncio.sleep(10)
 
 
-# ================= START =================
+# ========== START ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ البوت شغال وبيتابع أسعار الذهب للقناة")
+    await update.message.reply_text("✅ البوت شغال وبيحدث القناة تلقائيًا")
 
 
-# ================= MAIN =================
+# ========== POST INIT ==========
+async def post_init(app):
+    app.create_task(monitor(app))
+
+
+# ========== MAIN ==========
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
-
-    # فحص كل 10 ثواني (لكن الإرسال عند التغيير فقط)
-    app.job_queue.run_repeating(check_prices, interval=10, first=5)
 
     print("🚀 Bot Running...")
     app.run_polling()
