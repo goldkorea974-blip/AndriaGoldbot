@@ -2,9 +2,9 @@ import requests
 from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-import asyncio
 
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
+TOKEN = "PUT_YOUR_TOKEN_HERE"
+CHAT_ID = 940590742
 
 last_prices = ""
 
@@ -25,7 +25,6 @@ def get_prices():
 
     return result
 
-# 👇 دي أهم حاجة
 async def check_prices(context: ContextTypes.DEFAULT_TYPE):
     global last_prices
 
@@ -34,27 +33,23 @@ async def check_prices(context: ContextTypes.DEFAULT_TYPE):
     if new_prices != last_prices:
         last_prices = new_prices
 
-        chat_id = context.job.chat_id
         await context.bot.send_message(
-            chat_id=chat_id,
+            chat_id=CHAT_ID,
             text="📢 تحديث أسعار الذهب:\n\n" + new_prices[:4000]
         )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
     await update.message.reply_text("✅ هبعتلك الأسعار أول ما تتغير")
 
-    # كل 60 ثانية (تقدر تغيرها)
     context.job_queue.run_repeating(
         check_prices,
         interval=60,
         first=0,
-        chat_id=chat_id
+        chat_id=CHAT_ID
     )
 
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 
-app.run_polling())
+app.run_polling()
