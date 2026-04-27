@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import requests
 from bs4 import BeautifulSoup
@@ -5,89 +6,83 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
+CHANNEL_ID = "@AndriaGold"
 
 logging.basicConfig(level=logging.INFO)
 
-# نخزن آخر سعر لكل مستخدم
-last_data = {}
+last_data = None
 
 
-# ===== جلب الأسعار =====
+# ===== SCRAPE =====
 def get_gold_table():
     try:
         url = "https://edahabapp.com/"
-        headers = {"User-Agent": "Mozilla/5.0"}
-
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
+
         items = soup.find_all("div", class_="price-item")
 
-        text = "📊 أسعار الذهب اليوم\n\n"
-        text += "العيار | السعر\n"
-        text += "-----------------\n"
+        data = {}
 
         for item in items:
-            t = item.get_text(" ", strip=True)
-            parts = t.split()
+            text = item.get_text(" ", strip=True)
+            parts = text.split()
 
             if len(parts) >= 2:
-                text += f"{parts[0]} | {' '.join(parts[1:])}\n"
+                name = parts[0]
+                price = parts[1].replace(",", "")
 
-        return text
+                if price.isdigit():
+                    data[name] = int(price)
+
+        return data
 
     except Exception as e:
-        return f"❌ Error: {e}"
+        print("ERROR:", e)
+        return {}
 
 
-# ===== إرسال تحديث لو فيه تغيير =====
-async def check_updates(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-
-    new_data = get_gold_table()
-
+# ===== LOOP =====
+async def monitor(app):
     global last_data
 
-    # لو اتغير → ابعت
-    if last_data.get(chat_id) != new_data:
-        last_data[chat_id] = new_data
+    while True:
+        new_data = get_gold_table()
 
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="📢 تحديث جديد:\n\n" + new_data[:4000]
-        )
+        print("DEBUG:", new_data)
+
+        # أول مرة
+        if last_data is None:
+            await app.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=f"📊 أول أسعار الذهب\n\n{new_data}"
+            )
+            last_data = new_data
+
+        # تحديث
+        elif new_data != last_data:
+            await app.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=f"📢 تحديث أسعار الذهب\n\n{new_data}"
+            )
+            last_data = new_data
+
+        await asyncio.sleep(60)
 
 
-# ===== /start =====
+# ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
-    # أول رسالة فوراً
-    data = get_gold_table()
-    last_data[chat_id] = data
-
-    await update.message.reply_text(
-        "✅ أهلاً 👋\nدي أسعار الذهب الحالية:\n\n" + data[:4000]
-    )
-
-    # شيل أي job قديم لنفس المستخدم
-    for job in context.job_queue.get_jobs_by_name(str(chat_id)):
-        job.schedule_removal()
-
-    # شغل متابعة التغيير فقط
-    context.job_queue.run_repeating(
-        check_updates,
-        interval=60,
-        first=60,  # يبدأ يراقب بعد دقيقة
-        chat_id=chat_id,
-        name=str(chat_id)
-    )
+    await update.message.reply_text("✅ البوت شغال")
 
 
-# ===== تشغيل البوت =====
+# ===== POST INIT =====
+async def post_init(app):
+    app.create_task(monitor(app))
+
+
+# ===== MAIN =====
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
 
