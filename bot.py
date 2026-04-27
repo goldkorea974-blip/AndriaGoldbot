@@ -4,15 +4,18 @@ from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
+TOKEN = "PUT_YOUR_TOKEN"
+
+# قناة النشر
 CHANNEL_ID = "@AndriaGold"
 
 logging.basicConfig(level=logging.INFO)
 
-last_data = None
+# نخزن آخر بيانات لكل شات
+last_data = {}
 
 
-# ===== جلب الأسعار =====
+# ===== جلب أسعار الذهب =====
 def get_gold_table():
     try:
         url = "https://edahabapp.com/"
@@ -28,65 +31,67 @@ def get_gold_table():
         text += "العيار | السعر\n"
         text += "-----------------\n"
 
-        data = {}
-
         for item in items:
             t = item.get_text(" ", strip=True)
             parts = t.split()
 
             if len(parts) >= 2:
-                name = parts[0]
-                price = parts[1].replace(",", "")
+                text += f"{parts[0]} | {' '.join(parts[1:])}\n"
 
-                if price.isdigit():
-                    data[name] = int(price)
-                    text += f"{name} | {price}\n"
-
-        return text, data
+        return text
 
     except Exception as e:
-        return f"❌ Error: {e}", {}
+        return f"❌ Error: {e}"
 
 
-# ===== متابعة التحديث =====
+# ===== التحديثات التلقائية =====
 async def check_updates(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
+
+    new_data = get_gold_table()
     global last_data
 
-    new_text, new_data = get_gold_table()
+    # لو حصل تغيير
+    if last_data.get(chat_id) != new_data:
+        last_data[chat_id] = new_data
 
-    if not new_data:
-        return
+        msg = "📢 تحديث أسعار الذهب:\n\n" + new_data[:4000]
 
-    # أول مرة
-    if last_data is None:
+        # إرسال للمستخدم
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=msg
+        )
+
+        # إرسال للقناة
         await context.bot.send_message(
             chat_id=CHANNEL_ID,
-            text="📊 أول أسعار الذهب في القناة\n\n" + new_text[:4000]
+            text=msg
         )
-        last_data = new_data
-        return
-
-    # لو فيه تغيير
-    if new_data != last_data:
-        await context.bot.send_message(
-            chat_id=CHANNEL_ID,
-            text="📢 تحديث أسعار الذهب\n\n" + new_text[:4000]
-        )
-        last_data = new_data
 
 
 # ===== /start =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text, data = get_gold_table()
+    chat_id = update.effective_chat.id
+
+    data = get_gold_table()
+    last_data[chat_id] = data
 
     await update.message.reply_text(
-        "✅ أهلاً 👋\nدي أسعار الذهب الحالية:\n\n" + text[:4000]
+        "✅ أهلاً 👋\nدي أسعار الذهب الحالية:\n\n" + data[:4000]
     )
 
-    # إرسال للقناة أول مرة
-    await context.bot.send_message(
-        chat_id=CHANNEL_ID,
-        text="📊 مستخدم جديد فتح البوت\n\n" + text[:4000]
+    # حذف أي تحديث قديم
+    for job in context.job_queue.get_jobs_by_name(str(chat_id)):
+        job.schedule_removal()
+
+    # تشغيل متابعة التحديث
+    context.job_queue.run_repeating(
+        check_updates,
+        interval=60,   # كل دقيقة
+        first=60,
+        chat_id=chat_id,
+        name=str(chat_id)
     )
 
 
@@ -96,10 +101,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
 
-    # تشغيل التحديث كل دقيقة
-    app.job_queue.run_repeating(check_updates, interval=60, first=5)
-
-    print("🚀 Bot Running...")
+    print("Bot is running...")
     app.run_polling()
 
 
